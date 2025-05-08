@@ -22,6 +22,8 @@ import com.ververica.flinktraining.exercises.datastream_java.sources.TaxiFareSou
 import com.ververica.flinktraining.exercises.datastream_java.sources.TaxiRideSource;
 import com.ververica.flinktraining.exercises.datastream_java.utils.ExerciseBase;
 import com.ververica.flinktraining.exercises.datastream_java.utils.MissingSolutionException;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
@@ -75,17 +77,36 @@ public class RidesAndFaresExercise extends ExerciseBase {
 
 	public static class EnrichmentFunction extends RichCoFlatMapFunction<TaxiRide, TaxiFare, Tuple2<TaxiRide, TaxiFare>> {
 
+		private ValueState<TaxiRide> rideState;
+		private ValueState<TaxiFare> fareState;
 		@Override
 		public void open(Configuration config) throws Exception {
-			throw new MissingSolutionException();
+			ValueStateDescriptor<TaxiRide> taxiRideDescriptor = new ValueStateDescriptor<>("storedTaxiRide", TaxiRide.class);
+			rideState = getRuntimeContext().getState(taxiRideDescriptor);
+			ValueStateDescriptor<TaxiFare> taxiFareDescriptor =	new ValueStateDescriptor<>("storedTaxiFare", TaxiFare.class);
+			fareState = getRuntimeContext().getState(taxiFareDescriptor);
 		}
 
 		@Override
 		public void flatMap1(TaxiRide ride, Collector<Tuple2<TaxiRide, TaxiFare>> out) throws Exception {
+			TaxiFare fare = fareState.value();
+			if (fare != null) {
+				Tuple2<TaxiRide, TaxiFare> rideAndFare = new Tuple2<>(ride, fare);
+				out.collect(rideAndFare);
+				fareState.clear();
+			}
 		}
 
 		@Override
 		public void flatMap2(TaxiFare fare, Collector<Tuple2<TaxiRide, TaxiFare>> out) throws Exception {
+			TaxiRide ride = rideState.value();
+			if (ride != null) {
+				Tuple2<TaxiRide, TaxiFare> rideAndFare = new Tuple2<>(ride, fare);
+				out.collect(rideAndFare);
+				rideState.clear();
+			} else {
+				fareState.update(fare);
+			}
 		}
 	}
 }
